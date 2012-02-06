@@ -1,0 +1,874 @@
+//--------------------------------------------------------------------
+//
+//  Input.exe
+//
+//  
+//
+//--------------------------------------------------------------------
+*inc		//## インクルード
+//--------------------------------------------------------------------
+// Include
+//--------------------------------------------------------------------
+#include "define.hsp"
+#include "kernel32.as"
+#include "user32.as"
+#include "gdi32.as"
+#include "module_basic.hsp"	//基本モジュール
+
+
+//--------------------------------------------------------------------
+// マクロ定義
+//--------------------------------------------------------------------
+	
+	#define global _exename "input"				//実行ファイルの名前(重要)
+	#define global _tit "input"					//ソフトウェアタイトル名
+	#define global _ver "null"					//ソフトウェアバージョン
+	#define global _ininame "searder.ini"		//iniファイルの名前
+	#define global startchek 0					//二十起動防止コンパイルチェック
+	#define global _winx ginfo(12)				// ウィンドウの縦のサイズを代入
+	#define global _winy ginfo(13)				//ウィンドウの横のサイズを代入
+	#define global ango 0						//暗号化するかどうか
+	
+*deff	//## マクロ定義
+*pack	//## パック設定
+//--------------------------------------------------------------------
+// パック設定
+//--------------------------------------------------------------------	
+
+	#packopt name _exename
+	#packopt type 0
+	#packopt hide 1
+	#epack "icon.gif"
+
+//--------------------------------------------------------------------
+// 基本変数管理用変数
+//--------------------------------------------------------------------
+
+	winx=640					//初期ウィンドウの縦のサイズを代入
+	winy=480					//初期ウィンドウの横のサイズを代入
+	winposx=(ginfo(20)-winx)>>1	//ウィンドウの表示位置
+	winposy=(ginfo(21)-winy)>>1	//ウィンドウの表示位置
+	softtitle=_tit				//ソフトウェアタイトル
+	sdim tempstr,256
+*variable	//## 基本変数
+//--------------------------------------------------------------------
+// ▽モジュールエリア
+//--------------------------------------------------------------------
+
+//共通モジュール
+#module "mod"
+
+
+
+
+
+
+
+//指定したウィンドウをモーダルダイアログに変更する
+#deffunc modaldlg_set int p1, int p2
+s3=ginfo(3):gsel p1:s1=hwnd:gsel p2:s2=hwnd:gsel s3
+    GetWindowLong s2, GWL_STYLE
+    style = stat
+    style = style & (WS_MINIMIZEBOX|WS_MAXIMIZEBOX|WS_THICKFRAME) ^ style
+    SetWindowLong s2, GWL_STYLE, style
+    SetWindowLong s2, GWL_HWNDPARENT, s1
+    SetWindowPos s2, 0, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE|SWP_NOZORDER|SWP_FRAMECHANGED
+    gsel s3
+	return
+
+
+//モーダルダイアログを開く
+//modaldlg_open 親ウィンドウID,子ウィンドウID,表示する位置X,表示する位置Y
+#deffunc modaldlg_open int p1,int p2, int p3, int p4
+    gsel p1
+    EnableWindow hwnd, 0
+    gsel p2
+    width ,, p3, p4
+    gsel p2,1
+
+return
+
+
+//モーダルダイアログを閉じる
+//onexitのラベル先では、if (iparam = 0) & (wparam = 2) : modaldlg_close : return
+//modaldlg_close 親ウィンドウID,子ウィンドウID
+#deffunc modaldlg_close int p1,int p2
+ 	gsel p1,2
+    gsel p2,-1
+    gsel p1
+    EnableWindow hwnd, 1
+    gsel p1,1
+return
+
+
+
+#deffunc myiconload
+	buffer 5
+	picload "icon.gif"
+return
+
+#deffunc myicondraw
+pos ginfo_cx-5,ginfo_cy-12:gcopy 5,0,0,48,48
+return
+
+
+
+#if ango
+
+//暗号化 (STR)暗号化する変数,(STR)鍵
+#deffunc ang_enc var p1,str p2
+//パスワードの数値化
+s1 = p1:s2=p2:s3=strlen(s2):s6=strlen(s1):s5="":s8=0:randomize(2):repeat s3:s5+=str(wpeek(s2,cnt)+rnd(10))
+s8+=int(wpeek(s2,cnt)+rnd(10)):loop
+//暗号化
+randomize(s8):repeat s6:s7=peek (s1,cnt):s7 = s7 + 45 + int(strmid(s5,s4,cnt)) - rnd(10)   &255
+s4+:if s4>s3{s4=0}poke s1,cnt,s7:loop:s4=0:p1= s1:return
+
+#endif
+
+
+
+
+
+//メニューアイテムを追加
+//メニューハンドル, オプション(0)※,コマンドID, 表示する文字列
+//※オプション p1 0=通常 1=ポップアップメニュー($10) 2=区切り線
+#deffunc menuadd int p1, int p2, int p3, str p4
+mesbuf = p4:s1=0:if p2=1{s1=$10}if p2=2{s1=$800}:AppendMenuA p1,s1,p3,varptr(mesbuf):return
+
+
+
+
+
+#deffunc openedit
+modaldlg_open 0,3,ginfo_dispx-320>>1,ginfo_dispy-180>>1
+lotempstr@= tempstr@	//現在の状態を保持
+gsel 3
+objprm 0,tempstr@
+onkey gosub *entaras@
+return
+
+
+
+#defcfunc getsts str p1,int p2
+
+s2=p1
+	notesel s2
+	noteget s1,p2-3
+
+return str(s1)
+
+
+
+#deffunc menuloop str p1
+if lonote!0{
+	repeat lonote+10
+		DeleteMenu hmenu@,2,$00000400
+	loop
+}
+
+s2=p1
+notesel s2
+lonote=notemax
+repeat notemax
+noteget s1,cnt
+	menuadd hMenu@, 0,cnt+3,s1
+loop
+
+
+return
+
+
+
+
+#global
+
+
+
+;-----------------------------------------------------------
+; ＩＭＥの一般的な制御
+; Hsp3.0a                by hiroki
+;-----------------------------------------------------------
+#module "Ime_Control"
+    #uselib "imm32"
+    #cfunc ImmGetContext "ImmGetContext" sptr
+    #func ImmReleaseContext "ImmReleaseContext" sptr,sptr
+    #func ImmSetOpenStatus "ImmSetOpenStatus" sptr,sptr
+    #cfunc ImmGetOpenStatus "ImmGetOpenStatus" sptr
+ 
+; IME ON/OFF    on=1 : off=0
+#deffunc imeset int imesw
+    himc=ImmGetContext(hwnd)
+    ImmSetOpenStatus himc,imesw
+    ImmReleaseContext hwnd,himc
+    return
+ 
+; IMEが開かれているかどうかを調べる
+; 戻り値が0ならOFF、0以外ならONになっている
+#defcfunc imeget
+    himc=ImmGetContext(hwnd)
+    imesw=ImmGetOpenStatus(himc)
+    ImmReleaseContext hwnd,himc
+    return imesw
+    
+#global
+
+
+#module
+//指定した変数のバイト位置を文字インデックスに変換
+//p1: 文字インデックス値を取得する文字列型変数
+//p2: 変換したいバイト位置
+#defcfunc ByteToStrIndex var p1, int p2
+s2=0
+repeat p2
+		s1=peek(p1,cnt)
+		if ((s1>=$81)&(s1<=$9f))|((s1>=$e0)&(s1<=$fc))=1{
+			s2+
+			continue cnt+2
+		}else{
+			s2+
+			
+		}
+loop
+return s2
+#global
+
+#
+
+#module
+
+	#deffunc addtitle str p1
+	lockgsel 0,0
+	subject@=p1
+	s2=instr(subject@,0,"*")
+	if s2!-1{
+		subject@=strmid(subject@,0,s2) + strmid(subject@,s2+1,strlen(subject@)-s2)
+		if sysedittype@=0{
+			s1=s2
+		}else{
+			s1=ByteToStrIndex(subject@, s2)
+		}
+		
+		
+	}else{
+		s1=strlen(subject@)
+	}
+	objprm isubject@,subject@
+	objsel isubject@
+	sendmsg objinfo(isubject@,2),EM_SETSEL,s1,s1
+	lockgsel 1
+	return
+	
+#global
+
+#module
+//文字インデックス取得かバイト取得か調べる
+//戻り値
+//0= バイトによる文字取得
+//1= 文字インデックスによる文字取得
+#defcfunc get_system_edittype
+	//ウィンドウの作成
+	CreateWindowEx 0, "Edit" ,"１２３４５",$40000000 | $10000000 | $00800000 | $00000004 , 20, 50, 150, 50, hwnd, 0, hinstance, NULL
+	s1=stat
+	//テキストを選択し文字量を取得(環境のよって取得される値が異なる)
+	sendmsg s1, $b1, 0,-1
+	sendmsg s1, $b0, 0, varptr(s2)
+	switch s2
+		case 10
+			s3=0		//バイトで文字が取得されている
+		swbreak
+
+		case 5
+			s3=1		//文字インデックスで文字が取得されている
+		swbreak
+
+	swend
+	DestroyWindow s1	//ウィンドウの破棄
+return s3
+
+
+
+//findwindowtitle "ウィンドウクラス","ウィンドウタイトル"
+#defcfunc findwindowh str p1,str p2
+s1=p1:s2=p2:if s1!""{s3=varptr(s1)}else{s3=0}
+if s2!""{s4=varptr(s2)}else{s4=0}:FindWindowA s3,s4:return stat
+
+
+
+
+#global
+
+
+*module	//## モジュール
+*syoki	//## 初期動作
+//--------------------------------------------------------------------
+// 初期動作
+//--------------------------------------------------------------------
+
+
+	gosub *iniloads
+
+*scrset	//## スクリーン作成
+//--------------------------------------------------------------------
+// スクリーン作成
+//--------------------------------------------------------------------
+	
+	//####メイン####################
+	screen 0,winx,winy,6,winposx,winposy	//スクリーンウィンドウの初期化
+	gosub *input_pos						//ウィンドウ位置の記憶
+	title _tit
+	objmode 1
+	objsize 60,21
+	sysfont 17
+
+
+	//文字数取得タイプの取得
+	sysedittype=get_system_edittype()
+
+
+	; サブメニューを作成し、ハンドルを取得
+	CreatePopupMenu
+	hMenu.0 =stat
+
+
+	
+	menuadd hMenu, 0, 1, "編集"
+	menuadd hMenu, 2,2,""
+	menuloop tempstr
+
+
+	//#####テンプレートウィンドウ###########################
+	screen 3,320,160,6
+	title "テンプレート"
+	modaldlg_set 0,3
+	syscolor 15
+	boxf
+
+	syscolor 8
+	sysfont 17
+	posxstart 5,5,15
+	objsize 260
+	posx:listbox listr,130,tempstr :posh 262
+		ilistr=stat
+		posxstart ginfo_cx,ginfo_cy,24
+		objsize 51,21
+		posx:button gosub "追加",*sub_btn
+		//posx:button gosub "編集",*sub_btn
+		posx:button gosub "削除",*sub_btn
+		posx
+		posxdown 30
+		
+		posx:button gosub "OK",*sub_btn
+		posx:button gosub "ｷｬﾝｾﾙ",*sub_btn
+	posxend
+
+
+	//#########追加ウィンドウ############################
+	screen 4,240,100,6
+	title "テンプレートの追加"
+	modaldlg_set 3,4
+	syscolor 15
+	boxf
+	syscolor 8
+	sysfont 17
+	
+	posxstart 10,5,18
+		
+		posx:
+
+		
+
+		posx  : sdim i_template,256 : input i_template, 170,21,256
+		objsize 40,21
+		posh 175: button gosub "追加",*sub_add
+		posx 
+		color 100,100,100
+		posx:mes "\"*\"を指定すると入力時にその位置をキャレッ"
+		posx:mes "トにすることが出来ます"
+	posxend
+	
+
+
+
+
+	//メニューハンドル, オプション(0)※,コマンドID, 表示する文字列
+
+*onmsg	//## オンメッセージ定義
+//--------------------------------------------------------------------
+// オンメッセージ定義
+//--------------------------------------------------------------------
+
+	
+	gsel 0
+	onexit gosub *owari
+	oncmd gosub *ON_WM_MOVE,WM_MOVE					//ウィンドウが移動
+	oncmd gosub *ON_WM_LBUTTONDOWN,WM_LBUTTONDOWN	//左クリックを押した
+	onclick gosub *on_onclick
+	onkey gosub *keyds
+
+	gsel 3
+	onexit gosub *owari
+
+*main	//## メインスクリプト
+//--------------------------------------------------------------------
+// ＠メインスクリプト
+//--------------------------------------------------------------------
+
+
+			myiconload
+			screen 0,640,480,0,dispx-640/2,dispy-480/2
+			sdim subject,256
+				title "Searder - 新規データの登録"
+				
+				objmode 2,0
+				sysfont 17
+				syscolor 15:boxf 0,0,ginfo_winx,ginfo_winy
+			
+			
+			
+			color 255,255,255
+			boxf 0,0,ginfo_winx,90
+			syscolor 16
+			line -5,90,ginfo_winx+5,90
+			syscolor 14
+			line -5,91,ginfo_winx+5,91
+			
+			syscolor 16
+			line 10,420,ginfo_winx-12,420
+			syscolor 14
+			line 10,421,ginfo_winx-12,421
+			
+			color
+			
+			pos 20,20
+			pos 30,30:myicondraw
+			pos 90,15:
+			font "ＭＳ Ｐゴシック",12,0
+			mes "新規データの登録"
+			pos ginfo_cx,ginfo_cy+20
+			mes "Searderに登録したいデータを入力してください"
+			
+			imeset 1
+				objsize ,,14
+				syscolor 8:pos 10,110:mes "題名  （検索対象）"
+				input subject,ginfo_winx-200,21,127
+				isubject=stat	//オブジェクトIDを入れる
+				
+			pos 10,160:mes "本文"
+			sdim mb,128000
+
+			
+			mesbox mb,ginfo_winx-20,ginfo_winy-242,3,12799
+
+
+
+			objsize 200,21
+			
+			pos 10,ginfo_cy+30:button "以上の内容で登録する",*kiroku
+			objsize 60,21
+			pos ginfo_cx+205,ginfo_cy-21:button gosub "リセット",*rese
+			pos ginfo_winx-70,ginfo_cy-21:button gosub "終了",*owari2
+
+			#if ango
+			pos 460,123:chkbox "暗号化",ango
+			#endif
+				objsel 0
+
+			objsize 22,21
+			pos 453,124:button gosub ">>",*temp
+				
+			gsel 0,1
+			
+			
+			
+			
+			stop
+			
+
+
+
+
+	
+	gsel 0,1			//初期画面表示
+	stop
+	
+*onmsgarea	//## オンメッセージ処理
+//--------------------------------------------------------------------
+// オンメッセージ処理
+//--------------------------------------------------------------------
+
+*on_onclick	//画面がクリックされた
+	
+	if clickon=1{
+		lockgsel 0,0
+			; 右クリックされた時
+		; ポップアップメニューを開く。第1パラに開くポップアップ
+		; メニューのハンドルを指定してやる。
+		TrackPopupMenu hMenu.0, $100, ginfo (0), ginfo (1),0 , hwnd,0
+		clickon=0
+		
+		; stat にそれぞれメニュー項目のIDが返る
+		//追加開始
+		s1=stat
+		if (stat!0)&(stat!1){
+			addtitle getsts(tempstr,stat)
+		}
+		if s1=1{
+			openedit
+		}
+		lockgsel 1
+	}else{
+		//TrackPopupMenu hMenu.0, $100, ginfo (0), ginfo (1),0 , hwnd,0
+	}
+	
+	return
+	
+*temp	//テンプレートフォルダを開く
+	clickon=1
+	gosub *on_onclick
+
+	return
+
+*ON_WM_LBUTTONDOWN	//左クリックを押した
+	
+	//id 0
+	if ginfo_intid=0{
+		lockgsel 0,0
+		
+		if hspstat=1{
+			title "MOUSE("+mousex+","+mousey+")   _WINX-MOUSE("+(_winx-mousex)+","+(_winy-mousey)+")"
+		}
+		
+		locksel 1
+	}
+	
+	return
+	
+*ON_WM_MOVE	//ウィンドウが移動
+
+
+	return
+
+
+*subroot	//## サブルーチン
+//--------------------------------------------------------------------
+// サブルーチン
+//--------------------------------------------------------------------
+*iniloads	//iniの読み込み
+
+
+	//iniファイルの読み込み
+	iniload _ininame,data
+
+	//iniファイルが存在したかどうか
+	if stat!-1{
+		
+		tempstr=inigetstr("Template","",data)
+
+	}else{
+
+		tempstr=""
+
+	}
+	return
+
+
+
+*sub_btn	//編集画面
+
+
+
+	
+
+s1=stat
+
+lockgsel 0,3
+
+//listr リスト変数
+//ilistr リストID
+//tempstr
+
+notesel tempstr
+
+	switch s1
+
+		case 1	//"追加"
+			modaldlg_open 3,4,ginfo_dispx-280>>1,ginfo_dispy-100>>1
+			objsel 0
+			
+		swbreak
+
+		//case 2	//編集
+			
+		//swbreak
+
+		case 3 -1
+		
+			s1=ilistr
+			notedel listr
+			objprm ilistr, tempstr
+			objsel ilistr
+			if notemax!1{
+				SendMsg objinfo(ilistr,2), LB_SETCURSEL, s1+1, 0
+			}else{
+				SendMsg objinfo(ilistr,2), LB_SETCURSEL, 0, 0
+			}
+		swbreak
+
+		case 4	-1//"OK"
+			s1=findwindowh("hspwnd0","Searder")		//Searderが起動されていればハンドルを取得
+
+			if s1!0{
+				sendmsg s1,(WM_USER+0x0202)				//Searderに保存命令
+				wait 3									//保存するまでまつ
+			}
+
+			chdir dir_main							//ディレクトリ修正
+			iniload _ininame,data					//再読み込み
+			inisetstr "Template","",tempstr,data	//iniに現在のテンプレートを適用する
+			inisave _ininame,data					//データを保存
+			wait 3
+
+			if s1!0{
+				sendmsg s1,(WM_USER+0x0203)				//Searderに再読み込み命令
+			}
+			
+
+			modaldlg_close 0,3						//ウィンドウを閉じる
+			menuloop tempstr
+			onkey gosub *keyds
+		swbreak
+
+		case 5 -1		//キャンセルされた
+		
+			tempstr=lotempstr				//状態を元に戻す
+			modaldlg_close 0,3				//テンプレートウィンドウを閉じる
+			lockgsel 0,0
+			menuloop tempstr				//メニューの状態を元に戻す
+			lockgsel 1
+			onkey gosub *keyds
+		swbreak
+
+		
+	swend
+
+lockgsel 1
+
+	
+return
+			*rese //リセット
+			dialog "入力したデータをリセットしますか？",2,"確認"
+			if stat=6{
+				tit=""
+				mb=""
+				objprm 0,tit
+				objprm 1,mb
+				objsel 0
+
+				}
+			return
+*entaras	//キー動作＞追加
+	if iparam=13{
+		gosub *sub_add
+	}
+	return
+
+*keyds	//キー動作
+	mouse
+
+	
+	getkey key(0),16
+	getkey key(1),9
+
+	if (key(0)=1)&(key(1)=1){
+		objsel 0
+		return
+	}
+
+	if iparam=8{
+
+
+		
+
+			if mb=""{
+
+				if back=0{
+					back=1
+					key=1
+					onkey 0
+					while key=1
+						getkey key,8
+					wend
+					onkey 1
+					back=1
+					
+					return
+				}else{
+					getkey key,8
+					if key=1{
+						objsel 0
+					}
+					return
+				}
+		
+				
+			
+			}else{
+				back=0
+			}
+
+
+	}
+
+	
+	if (iparam=9)|(iparam=13){
+		objsel -1
+		if stat=-1:objsel 0
+		if stat=0:objsel 1
+		return
+	}
+	return
+
+
+*sub_add	// テンプレートの追加ボタンを押した
+
+	if strmid(i_template,0,1)="[" : dialog "先頭に\"[\"を使用することは出来ません",1,"Error":return
+	if i_template="":return
+	
+	s1=i_template
+	sdim i_template,256
+	gsel 4
+	objprm 0,i_template
+	modaldlg_close 3,4		//追加ウィンドウを閉じた
+	
+
+	gsel 3
+	notesel tempstr
+	noteadd s1		//追加
+	objprm 0,tempstr
+	menuloop tempstr
+
+	
+	return
+
+
+
+*kiroku	//登録
+if (subject="")&(mb=""):dialog "未入力個所があります":objsel 0:stop
+if subject="":dialog "題名が未入力です":objsel 0:stop
+if mb="":dialog "本文が未入力です":objsel 1:stop
+
+
+chdir dir_main
+if folderchek("data")=0:mkdir "data"
+chdir "data"
+
+
+dirlist listx,"*.*"
+notesel listx
+
+
+
+
+repeat notemax
+	noteget s1,cnt
+	if s1=subject{
+		dialog "すでに同じ題名のデータがあります。上書きしますか？",2,"確認"
+		if stat=7:endflag=1:break		//いいえ
+		if stat=6:break		//はい
+	}
+loop
+if (endflag=1)&(stat=7):endflag=0 :stop		//いいえの場合return
+
+
+
+#if ango
+
+//暗号化する場合
+if ango=1{
+ang_enc mb,"79638251104"
+mb+="/CODE"
+}
+#endif
+
+
+
+notesel mb
+onerror *errss
+notesave subject			//セーブ
+onerror 0
+
+
+
+dialog "登録に成功しました"
+
+
+
+	//初期化
+	mb=""
+	subject=""
+	objprm 1,mb
+	objprm 0,subject
+	chdir dir_main
+	objsel 0
+
+	s2="hspwnd0"
+	s3="Searder"
+	FindWindowA varptr(s2),varptr(s3)
+	hwn=stat
+
+
+	//Searder側でリストを更新させる
+	if hwn!0{
+	sendmsg hwn,WM_USER+0x0201
+	}
+
+
+
+	stop
+
+
+
+
+*errss
+	if err!0:dialog "題名に使用できない文字が含まれています。",1
+	onerror 0
+	stop
+
+*input_pos	//ウィンドウ位置の記憶
+
+	return
+
+
+*owari2	//softend
+	sendmsg hwnd,WM_CLOSE
+	return
+
+*owari	//ソフト終了
+
+	switch wparam
+
+		case 0
+			end
+		swbreak
+
+
+		case 3
+			modaldlg_close 0,3				//テンプレートウィンドウを閉じる
+			gsel 0
+			onkey gosub *keyds
+			
+		swbreak
+
+		case 4
+			modaldlg_close 3,4				//テンプレートウィンドウを閉じる
+			
+		swbreak
+		
+	
+
+
+	swend
+
+	return
+

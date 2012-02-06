@@ -1,0 +1,32 @@
+
+;-----------------------------------------------------------
+; ＩＭＥの一般的な制御
+; Hsp3.0a                by hiroki
+;-----------------------------------------------------------
+#module "Ime_Control"
+    #uselib "imm32"
+    #cfunc ImmGetContext "ImmGetContext" sptr
+    #func ImmReleaseContext "ImmReleaseContext" sptr,sptr
+    #func ImmSetOpenStatus "ImmSetOpenStatus" sptr,sptr
+    #cfunc ImmGetOpenStatus "ImmGetOpenStatus" sptr
+ 
+; IME ON/OFF    on=1 : off=0
+#deffunc imeset int imesw
+    himc=ImmGetContext(hwnd)
+    ImmSetOpenStatus himc,imesw
+    ImmReleaseContext hwnd,himc
+    return
+ 
+; IMEが開かれているかどうかを調べる
+; 戻り値が0ならOFF、0以外ならONになっている
+#defcfunc imeget
+    himc=ImmGetContext(hwnd)
+    imesw=ImmGetOpenStatus(himc)
+    ImmReleaseContext hwnd,himc
+    return imesw
+
+
+#deffunc imedel
+if imeget()=1:imeset 0:imeset 1
+return
+#global

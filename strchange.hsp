@@ -1,0 +1,48 @@
+#module "kana_kana"
+    /*
+        kana 変換したい文字の入った変数 , 変換モード
+        変換モードの値：0=ひらがなに変換 / 1=カタカナに変換 / 2=ひらがなとカタカナを反転
+    */
+        #deffunc kana var v,int mode
+        mode_=mode
+ 
+            repeat strlen(v)
+                //先頭バイトと後続バイトを記憶
+                byte0=peek(v,cnt  )
+                byte1=peek(v,cnt+1)
+ 
+                //半角か全角か。0=半角 / 1=全角
+                if ( ($81<=byte0)&(byte0<=$9f) | ($e0<=byte0) ) {
+ 
+                    //ひらがなかカタカナか。ひらがな:flg=0、カタカナ:flg=1、それ以外:flg=-1
+                    flg = -1
+                    if (byte0 = $82) & (byte1 >= $9f)&(byte1 <= $f1)    :flg=0
+                    if (byte0 = $83) & (byte1 >= $40)&(byte1 <= $96)    :flg=1
+ 
+                    //反転モードなら
+                    if mode=2    :mode_=flg!1
+ 
+                    //ひらがなに変換
+                    if mode_=0 & flg=1 {
+                        if byte1 < $7e  { a = byte1-$a1 + 256*(byte1<$a1) }
+                        else            { a = byte1-$a0 + 256*(byte1<$a1) }
+                        poke v,cnt  ,a/256+byte0-(byte1<$a1)
+                        poke v,cnt+1,a\256
+                    }
+ 
+                    //カタカナに変換
+                    if mode_=1 & flg=0 {
+                        if byte1 < $dd  { a = byte1+$a1 }
+                        else            { a = byte1+$a2 }
+                        poke v,cnt  ,a/256+byte0
+                        poke v,cnt+1,a\256
+                    }
+ 
+                    //全角なので2バイト進む
+                    continue cnt+2
+                }
+ 
+            loop
+ 
+        return
+    #global

@@ -1,0 +1,1883 @@
+//--------------------------------------------------------------------
+//
+//  Searder 
+//
+//  
+//
+//--------------------------------------------------------------------
+*inc		//## インクルード
+//--------------------------------------------------------------------
+// Include
+//--------------------------------------------------------------------
+#include "define.hsp"
+#include "kernel32.as"
+#include "user32.as"
+#include "gdi32.as"
+#include "module_basic.hsp"	//基本モジュール
+#include "findselect.hsp"
+#include "ime.hsp"
+#include "mod_findselect.hsp"
+
+//--------------------------------------------------------------------
+// マクロ定義
+//--------------------------------------------------------------------
+	
+	#define global _exename "searder"				//実行ファイルの名前(重要)
+	#define global _tit "Searder"					//ソフトウェアタイトル名
+	#define global _ver "1.20"					//ソフトウェアバージョン
+	#define global _ininame _exename+".ini"		//iniファイルの名前
+	#define global startchek 1					//二十起動防止コンパイルチェック
+	#define global _winx ginfo(12)				// ウィンドウの縦のサイズを代入
+	#define global _winy ginfo(13)				//ウィンドウの横のサイズを代入
+	#define global _cwidth 28
+	#define global _searwidth 38
+	#define global tab		"        "+mark+" "
+	#define global _mesboxtop		3	
+	#define global _mesboxbottom 1
+	#define global _editscreen_width 		640
+	#define global _editscreen_height		320
+	#define ctype IsZenkaku(%1) ((((%1)^$20)-$a1&$ff)<=$3b) ;// Shift-Jis用 (日本語Windows)
+	#define global encode	0				//暗号化モジュール
+	#define global _mesboxright		-3
+	#define global _mesboxleft		3
+	#define global _msl	0
+	#define global _msr	0
+	#define global fonts ""
+	#define global MEM_EDIT	6400		//編集画面で保持されるメモリ
+	#define global START_SEA_SEL 8		//セルを飛ばす位置
+*deff	//## マクロ定義
+*pack	//## パック設定
+//--------------------------------------------------------------------
+// パック設定
+//--------------------------------------------------------------------	
+
+	#packopt name _exename
+	#packopt type 0
+	#packopt hide 1
+	#epack "0.gif"
+	#epack "1.gif"
+	#epack "2.gif"
+	#epack "3.gif"
+	#epack "4.gif"
+	#epack "loupe.gif"
+
+
+//--------------------------------------------------------------------
+// 基本変数管理用変数
+//--------------------------------------------------------------------
+
+	winx=360					//初期ウィンドウの縦のサイズを代入
+	winy=206					//初期ウィンドウの横のサイズを代入
+	winposx=(ginfo(20)-winx)>>1	//ウィンドウの表示位置
+	winposy=(ginfo(21)-winy)>>1	//ウィンドウの表示位置
+	softtitle=_tit				//ソフトウェアタイトル
+	sdim seames,256				//検索結果が入る変数
+	sdim mb,640
+	filedat=""
+	ar=""
+	dmstr=""					//ダミー変数
+	sdim insearchmes,256
+	sdim viewmes,64
+	
+	
+*variable	//## 基本変数
+	
+//--------------------------------------------------------------------
+// ▽モジュールエリア
+//--------------------------------------------------------------------
+
+
+#uselib "SHLWAPI.dll"
+	#func StrStrIA "StrStrIA" sptr,sptr
+
+
+
+
+
+
+
+
+
+
+
+#if encode
+#module
+//復号化 (STR)復号化する変数,(STR)鍵
+#deffunc ang_dec var p1, str p2
+dim s4
+//パスワードの数値化
+s1 = p1:s2=p2:s3=strlen(s2):s6=strlen(s1):s5="":s8=0:randomize(2):repeat s3:s5+=str(wpeek(s2,cnt)+rnd(10))
+s8+=int(wpeek(s2,cnt)+rnd(10)):loop
+//暗号化解除
+randomize(s8):repeat s6:s7=peek (s1,cnt)
+s7 = s7 - 45 - int(strmid(s5,s4,cnt)) + rnd(10)  &255
+s4+:if s4>s3{s4=0}poke s1,cnt,s7:loop:p1=s1:return
+#global
+#endif
+
+//共通モジュール
+#module "mod"
+
+
+
+
+//imgbtncolor imgbtnstyleを利用しない場合の配列変数の初期化
+#deffunc imgbtnini
+dim imgbtn_color_nonselect,3:dim imgbtn_curchek,32:dim imgbtn_fonttype,3:dim imgbtn_curnom,1:dim imgbtn_mousecursor,64
+dim imgbtn_color_clicked,3:dim imgbtn_color_selected,3:dim imgbtn_color_nonselect,3:return
+
+//ボタン内の文字の色を指定
+#deffunc imgbtncolor array p1, array p2, array p3
+dim imgbtn_color_nonselect,3:repeat length(p1):imgbtn_color_nonselect(cnt)=p1(cnt):loop:dim imgbtn_color_selected,3
+repeat length(p2):imgbtn_color_selected(cnt)=p2(cnt):loop:dim imgbtn_color_clicked,3:repeat length(p3)
+imgbtn_color_clicked(cnt)=p3(cnt):loop:return
+
+
+
+//imgbtnstyle
+//p1文字のスタイル 0=通常 1=太字 2=イタリック 4=下線 8=打ち消し線 16=イタリック
+//p2マウスカーソル 0=通常 1=ハンドカーソル
+#deffunc imgbtnstyle int p1,int p2
+imgbtn_fonttype(ginfo(3))=p1:if (p2=1)&(imgbtn_cursorset=0){:imgbtn_cursorset=1:dim imgbtn_mousecursor,32
+dim imgbtn_curchek,32:LoadCursorA 0,32512:imgbtn_curnom(0)=stat:LoadCursorA 0,32649:imgbtn_curnom(1)=stat
+}imgbtn_mousecursor(ginfo(3))=p2:return
+
+
+
+//HTMLのようなテキストボタンを表示する
+//imgbtn 押したかどうかが返る変数, 表示する文字列
+//テキストボタンはひとつのラベルにまとめて各ウイン
+//ドウメッセージに指定すること
+//imgbtn 押したかどうかが入るフラグ,文字列,画像,画像,画像,W,H
+//画像=ID,X,Y
+/*
+oncmd gosub *hit,WM_LBUTTONUP
+oncmd gosub *hit,WM_LBUTTONDOWN
+oncmd gosub *hit,WM_MOUSEMOVE
+*/
+#deffunc imgbtn var p1,str p2, array p3, array p4, array p5, int p6,int p7
+s2=0:font fonts,12,imgbtn_fonttype:cx=ginfo(22):cy=ginfo(23):if ginfo(3)!imgbtn_gin{imgbtn_start=""}
+if imgbtn_start=""{imgbtn_number=0:imgbtn_start=(str(ginfo(3))+"|%|"+str(cx)+"|%|"+str(cy)+"|%|"+p2)
+}else{if imgbtn_start=(str(ginfo(3))+"|%|"+str(cx)+"|%|"+str(cy)+"|%|"+p2){imgbtn_number=0}else{imgbtn_number+}}
+imgbtn_gin=ginfo(3):s1=p2:dim s3,2:GetTextExtentPoint32A hdc,varptr(s1),strlen(s1),varptr(s3):s3(0)=(p6-s3(0))>>1
+s3(1)=(p7-s3(1))>>1:bb=p6,p7:getkey s1,1:if ((imgbtn_var)=(str(ginfo(3))+"|%|"+str(cx)+"|%|"+str(cy)+"|%|"+p2))|(imgbtn_varc=0){
+if (cx-1<=LOWORD(lparam))&(cy<=HIWORD(lparam))&((cx+bb(0))-1>=LOWORD(lparam))&((cy+bb(1))-1>=HIWORD(lparam)){if s1=1{p1=0
+if imgbtn_lock(imgbtn_number)=1{pos cx,cy:gcopy p4(0),p4(1),p4(2),p6,p7
+color imgbtn_color_selected(0),imgbtn_color_selected(1),imgbtn_color_selected(2)
+s2=1:pos cx+s3(0),cy+s3(1):mes p2}else{s2=1:if imgbtn_varc=0{imgbtn_varc=1
+imgbtn_var=(str(ginfo(3))+"|%|"+str(cx)+"|%|"+str(cy)+"|%|"+p2)}
+pos cx,cy:gcopy p5(0),p5(1),p5(2),p6,p7:color imgbtn_color_clicked(0),imgbtn_color_clicked(1),imgbtn_color_clicked(2)
+imgbtn_chek(imgbtn_number)=1:pos cx+s3(0)+1,cy+s3(1)+1:mes p2:imgbtn_draglock=1}if imgbtn_mousecursor(ginfo(3))=1{
+SetClassLongA hwnd,-12,imgbtn_curnom(1):SetCursor imgbtn_curnom(1):imgbtn_curchek(imgbtn_number)=1}}else{
+imgbtn_draglock(imgbtn_number)=0:imgbtn_lock(imgbtn_number)=0:if imgbtn_chek(imgbtn_number)=1{p1=1
+:imgbtn_chek(imgbtn_number)=0}else{p1=0}pos cx,cy:gcopy p4(0),p4(1),p4(2),p6,p7
+color imgbtn_color_selected(0),imgbtn_color_selected(1),imgbtn_color_selected(2)
+pos cx+s3(0),cy+s3(1):mes p2:if imgbtn_mousecursor(ginfo(3))=1{SetClassLongA hwnd,-12,imgbtn_curnom(1):SetCursor imgbtn_curnom(1)
+imgbtn_curchek(imgbtn_number)=1:himm=1}}}else{if (imgbtn_mousecursor(ginfo(3))=1)&(himm=0){if imgbtn_curchek(imgbtn_number)=1{
+prm=hwnd,-12,imgbtn_curnom(0):SetClassLongA hwnd,-12,imgbtn_curnom(0):SetCursor imgbtn_curnom(0):imgbtn_curchek(imgbtn_number)=0
+}}else{himm=0}p1=0:if (imgbtn_draglock=0)&(s1=1)&(s2=0)=1{imgbtn_lock(imgbtn_number)=1}else{imgbtn_chek(imgbtn_number)=0}
+pos cx,cy:gcopy p3(0),p3(1),p3(2),p6,p7:color imgbtn_color_nonselect(0),imgbtn_color_nonselect(1),imgbtn_color_nonselect(2)
+pos cx+s3(0),cy+s3(1):mes p2}}if s1=0{imgbtn_draglock=0:imgbtn_varc=0:s2=0}font "",12:return
+
+//選択するための囲いを描画
+#deffunc select_rect int p1,int p2,int p3,int p4
+color
+repeat p3/2+1
+	pset p1+cnt*2,p2
+loop
+
+repeat p3/2+1
+	pset p1+cnt*2,p2+p4
+loop
+
+repeat p4/2
+	pset p1,p2+cnt*2
+loop
+
+repeat p4/2-1
+	pset p1+p3,p2+cnt*2+2
+loop
+return
+
+
+//ボタンスキンのセット	 p1=スキンID
+#deffunc btnskinset int p1
+	//ディレクトリの保持
+	s1=p1
+	lodi=dir_cur
+	chdir dir_main
+	logg=ginfo(3)
+	
+	
+	//オープン
+	buffer 9	//すきんID
+	howhit=0
+	repeat 4
+		if cnt=0:kakutyo=".gif"
+		if cnt=1:kakutyo=".bmp"
+		if cnt=2:kakutyo=".jpg"
+		if cnt=3:kakutyo=".ico"
+		btskps=""+s1+kakutyo
+		exist btskps
+		if strsize!-1:howhit=1:break
+		loop
+		
+		if howhit=0{
+				dialog "存在しないスキンです。"
+	
+				s1=lobtnskintype
+				gsel logg
+				chdir lodi
+				objsel 1
+				return
+		}
+		if howhit=1{
+			picload btskps
+				inisetint "System","Btnskin",s1,data@
+		}
+	
+	
+	
+	//バッファ
+	buffer 5,80,42
+	pos 0,0:gzoom _searwidth,19,9,0,0,40,21
+	pos 0,19:gzoom _searwidth,19,9,0,21,40,21
+	btn1x=40
+	btn1y=21
+	
+	
+	buffer 6,80,42
+	pos 0,0:gzoom _cwidth,19,9,0,0,40,21
+	pos 0,19:gzoom _cwidth,19,9,0,21,40,21
+	btn2x=40
+	btn2y=21
+		
+	gsel logg
+	chdir lodi
+	gosub *btndraw@
+	return
+
+
+
+//画面の再描画
+#deffunc redrawrect int p1,int p2,int p3,int p4,int p5
+	rect=p2,p3,p4,p5	//boxf と同様
+	InvalidateRect p1,varptr(rect),0
+	return
+
+//オブジェクトの無効化
+#deffunc objvisible int p1,int p2
+if p2=1{
+	 	SetWindowPos p1,0,0,0,0,0,SWP_SHOWWINDOW|SWP_NOSIZE|SWP_NOMOVE
+ 	}else{
+	 	SetWindowPos p1,0,0,0,0,0,SWP_HIDEWINDOW|SWP_NOSIZE|SWP_NOMOVE
+ 	}
+return
+	
+
+//リストボックスの描画
+#deffunc mbmes str p1
+lockgsel 0,0
+mb@=p1
+objvisible objinfo(0,2),0
+objprm 0,mb@
+wait 0
+objvisible objinfo(0,2),1
+objsel 1
+lockgsel 1
+return
+
+//初期化
+#deffunc clsseames int p1
+lockgsel 0,0
+seames@=""
+objprm 1,seames@
+objsel 1
+if p1=0:objsel 1:else:objsel 0
+lockgsel 1
+return
+
+
+
+//ウィンドウスタイルの追加
+#deffunc setwinstyleadd int p1, int p2
+ 	GetWindowLongA p1,GWL_STYLE
+ 	SetWindowLongA p1,GWL_STYLE,stat|p2
+return
+
+//ウィンドウスタイルの削除
+#deffunc setwinstyledel int p1, int p2
+ 	GetWindowLongA p1,GWL_STYLE
+ 	SetWindowLongA p1,GWL_STYLE,stat^p2
+return
+
+
+//指定したウィンドウをモーダルダイアログに変更する
+#deffunc modaldlg_set int p1, int p2
+s3=ginfo(3):gsel p1:s1=hwnd:gsel p2:s2=hwnd:gsel s3
+    GetWindowLong s2, GWL_STYLE
+    style = stat
+    style = style & (WS_MINIMIZEBOX|WS_MAXIMIZEBOX) ^ style
+    SetWindowLong s2, GWL_STYLE, style
+    SetWindowLong s2, GWL_HWNDPARENT, s1
+    SetWindowPos s2, 0, 0, 0, 0, 0, SWP_NOSIZE|SWP_NOMOVE|SWP_NOZORDER|SWP_FRAMECHANGED
+    gsel s3
+	return
+
+//モーダルダイアログを開く
+//modaldlg_open 親ウィンドウID,子ウィンドウID,表示する位置X,表示する位置Y
+#deffunc modaldlg_open int p1,int p2, int p3, int p4
+    gsel p1
+    EnableWindow hwnd, 0
+    gsel p2
+    width ,, p3, p4
+    gsel p2,1
+return
+
+//モーダルダイアログを閉じる
+//onexitのラベル先では、if (iparam = 0) & (wparam = 2) : modaldlg_close : return
+//modaldlg_close 親ウィンドウID,子ウィンドウID
+#deffunc modaldlg_close int p1,int p2
+ 	gsel p1,2
+    gsel p2,-1
+    gsel p1
+    EnableWindow hwnd, 1
+    gsel p1,1
+return
+
+
+
+//エラー
+#deffunc errs str p1
+dialog p1,1,_tit
+return
+
+
+
+#deffunc clsinsearch
+sdim insearchmes@,256
+objprm 1,insearchmes@
+offset@=0
+return
+
+
+//ビュー画面の表示 p1=ファイル名
+#deffunc viewopen str p1
+imeset 1
+
+
+lockgsel 0,2
+title "Searder - ["+p1+"]"
+chdir dir_main
+if folderchek("data")!1:mkdir "data":wait 0
+chdir "data"
+
+if fileh(p1)!1:errs "ファイルが見つかりません":return
+
+openfilename=p1
+modaldlg_open 0,2,(ginfo_dispx-640)/2,(ginfo_dispy-480)/2
+gsel 2
+
+
+
+
+clsinsearch			//内蔵検索ボックスをクリア
+
+
+
+redraw 0
+color 60,60,60
+	boxf 0,0,ginfo_winx,19+_mesboxtop
+color 190,190,190						//ColorSet
+	boxf 0,0,ginfo_winx,18+_mesboxtop
+color 255,255,255
+	boxf 0,0,ginfo_winx,17+_mesboxtop
+
+color 200,200,200
+	line -1,ginfo_winy-24+_mesboxbottom,ginfo_winx,ginfo_winy-24+_mesboxbottom
+
+color 60,60,60
+	line -1,ginfo_winy-25+_mesboxbottom,ginfo_winx,ginfo_winy-25+_mesboxbottom
+
+
+
+//!!!!!!!!!!!!!!
+color 255,255,255
+	line _msl,12,_msl,ginfo_winy-24
+	line ginfo_winx-1+_msr,12,ginfo_winx-1+_msr,ginfo_winy-24
+	
+
+color 60,60,60
+	line 1+_msl,21,1+_msl,ginfo_winy-24
+	line ginfo_winx-2+_msr,21,ginfo_winx-2+_msr,ginfo_winy-24
+
+
+
+font "ＭＳ Ｐゴシック",15,0
+	color 237,237,237
+	pos 13-1,4-1:mes p1
+	pos 13+1,4+1:mes p1
+	pos 13-1,4:mes p1
+	pos 13,4-1:mes p1
+	pos 13+1,4-1:mes p1
+	pos 13-1,4+1:mes p1
+	pos 13+1,4:mes p1
+	pos 13,4+1:mes p1
+	color 207,207,207
+	pos 13,4:mes p1
+color:pos 11,2:mes p1
+
+font "ＭＳ Ｐゴシック",12,0
+redraw 1
+
+notesel viewmes@
+noteload p1
+
+#if encode
+	if strmid(viewmes@,-1,5)="/CODE"{
+	
+		sdim viewmes@
+		bload p1,viewmes@
+		size=strsize
+		s1=viewmes@
+		
+		memset viewmes@,0,size
+		memcpy viewmes@,s1,size-5
+		
+	
+		ang_dec viewmes@,"79638251104"
+	
+	}
+#endif
+
+
+objprm 0,viewmes@
+
+objsel 0
+
+noteunsel
+
+	pos ginfo_winx-211,0:gcopy 4,0,0,21,21
+
+
+	gosub *imgbtn_2@
+	onkey gosub *view_onkey@
+lockgsel 1
+return
+
+
+#defcfunc listmaxs
+notesel filelist
+return notemax
+
+//--------------------------------
+//
+//  outinput 文字の置換
+//
+//    p1=置き換える文字列型変数
+//    p2=置きかえる前の文字列
+//    p3=置き換えたあとの文字列
+//    p4=メモリ確保容量(0=strlen(p1)+1)
+//---------------------------------
+#deffunc outinput var p1,str p2,str p3,int p4
+in=p2:out=p3:if p4=0{sdim dbuf,strlen(p1)+1}else{sdim dbuf,p4}
+res=0 : idx=0 : didx=0:buflen=strlen(p1) : inlen=strlen(in) : outlen=strlen(out)
+repeat:res=instr(p1,idx,in):if res=-1 { memcpy dbuf,p1,buflen-idx,didx,idx : break}
+memcpy dbuf,p1,res,didx,idx : dbuf+=out:idx+=res+inlen : didx+=res+outlen
+loop:p1=dbuf:dim dbuf,1:return
+
+
+
+//文字列分割 selcut 配列変数, 読み出す文字列, 区切る文字
+#deffunc selcut array p1,str p2,str p3
+dim p1:s5=0:s3=0:s1=p2:s4=p3:repeat:s2=instr(s1,s3,p3):if s2=-1{s3=strlen(s1)+1}s3+=s2
+p1(cnt)=strmid(s1,s5,s3-s5):if ("\""=strmid(p1(cnt),0,1))&("\""=strmid(p1(cnt),-1,1)){
+p1(cnt)=strmid(p1(cnt),1,strlen(p1(cnt))-2)}s3+=strlen(s4):s5=s3:if s2=-1{break}loop:return
+
+#deffunc listload
+	chdir dir_main
+	if folderchek("data")!1:mkdir "data"
+	chdir "data"
+	dirlist filelist,"*.*",1
+	chdir dir_main
+	return
+
+#defcfunc listgetsel int p1
+	chdir dir_main
+	notesel filelist
+	noteget s1,p1
+	noteunsel
+	chdir dir_main
+	return s1
+
+
+//マッチング変換
+#deffunc mattingchange var p1
+CharLowerA varptr(p1)	//全て小文字に変換
+return
+
+//検索エンジン
+//p1 : 検索結果が返る変数
+//p2 : 検索する文字列
+//p3 : 見出しらしきもの
+#deffunc listsearch var p1, str p2,str p3
+
+sdim p1
+sdim s1
+offset=0
+
+//検索文字列の分割
+s4=strlen(p2) : s3=p2
+mattingchange s3
+
+repeat
+	getstr s2,s3,offset,' '
+	s1(cnt)=s2
+	if s2="":break
+	offset+=strsize
+loop
+
+// s2 s3 s4 Free
+//s3=メインループカウント
+//s2=行取得
+//s4=取得用
+s3=0
+s5=filelist
+
+foreach s1
+	if s1(cnt)="":continue	//空白の場合とばす
+	s4=s5
+	
+	s5=""
+
+	
+	notesel s4
+	repeat notemax
+		noteget s2,cnt		//最初の行が代入される
+		s6=s2
+		
+		
+		mattingchange s6			//数値変換
+		
+		if instr(s6,0,s1(s3))!-1{//HIT！
+			
+			noteget s2,cnt
+			s5+=s2+"\n"	//追加
+			
+		}
+	loop
+	
+	
+
+	s3+
+loop
+
+noteunsel
+
+p1=s5
+
+//見出し追加
+notesel p1
+repeat notemax
+noteget s1,cnt
+noteadd p3+s1,cnt,1
+loop
+noteunsel
+
+
+
+sdim s4
+return
+
+
+#deffunc seamesset str p1
+lockgsel 0,0
+seames@=p1
+gosub *Search_on@
+objsel 2
+lockgsel 1
+return
+
+
+
+#deffunc actsel int p1
+lockgsel 0,0
+objsel p1
+lockgsel 1
+
+return
+
+
+
+#deffunc editviewopen str p1 ,int p2
+lockgsel 0,3
+onkey 0
+chdir dir_main
+if folderchek("data")!1:mkdir "data":wait 0
+chdir "data"
+if fileh(p1)!1:errs "ファイルが見つかりません":return
+
+modaldlg_open p2,3,(ginfo_dispx-_editscreen_width)/2,(ginfo_dispy-_editscreen_height)/2
+
+gsel 3
+title "Searder - 編集  [ "+p1+" ]"
+sdim write@,MEM_EDIT
+notesel write@
+noteload p1
+objprm 0,write@
+objsel 0
+
+write_file=p1
+noteunsel
+gsel 3,1
+chdir dir_main
+lockgsel 1
+onkey 0
+imeset 1
+
+return
+
+
+
+
+
+#deffunc listeditsave
+
+lockgsel 0,3
+chdir dir_main
+if folderchek("data")!1:mkdir "data":wait 0
+chdir "data"
+notesel write@
+notesave write_file
+
+
+if parent@=2{
+gsel 2
+s1=write@
+objprm 0,s1
+
+
+gsel 3
+actwin hwnd
+
+
+}
+
+
+
+
+dialog "正常に保存しました",,"Searder"
+objsel 0
+
+
+chdir dir_main
+lockgsel 1
+gsel 3
+actwin hwnd
+
+return
+
+;文字コード判定関数
+;	MbsbType( p1, p2)
+;		Shift-JISの２バイト文字かを判定します。
+;		p1 : 内容をチェックする文字列変数
+;		p2 : バッファのインデックス（Byte単位）
+;
+;	次の値を返します。
+;		0:シングルバイト（１バイト文字）
+;		1:マルチバイトの先行バイト（２バイト文字の１バイト目）
+;		2:マルチバイト文字の後続バイト（２バイト文字の２バイト目）
+;
+;	msvcrt.dllの_mbsbtype関数と同等の動作をします。
+;---
+;	MbsbTypeByte( p1 )
+;		Shift-JISのマルチバイトの先行バイトかどうか判定します。
+;		p1 : peekで取得した値を入れる。
+;		返り値：
+;			0:シングルバイトまたはマルチバイトの後続バイト
+;			1:マルチバイトの先行バイトまたはマルチバイトの後続バイト
+#defcfunc MbsbTypeByte int byt
+    return ((byt>=0x81)&(byt<=0x9f) )|( (byt>=0xe0)&(byt<=0xfc))
+ 
+#defcfunc MbsbType var p1, int p2
+    bcnt = p2
+    repeat p2
+        if MbsbTypeByte(peek(p1, p2-cnt-1)) = 0 : bcnt = cnt : break
+    loop
+    if bcnt\2 {
+        ;マルチバイトの後続バイト
+        return 2
+    } else {
+        ;マルチバイトの先行バイトかシングルバイト
+        return MbsbTypeByte(peek(p1, p2))
+    }
+
+#defcfunc typelen var p1
+s1=0
+repeat strlen(p1)
+if peek(p1,cnt)!13{
+	if 1>=MbsbType(p1,cnt):s1+
+}
+loop
+return s1
+
+
+
+#defcfunc nottypelen var p1
+s1=0
+repeat strlen(p1)
+if peek(p1,cnt)!13{
+	if 2=MbsbType(p1,cnt):s1+
+}
+loop
+return s1
+
+
+#defcfunc mbmax
+notesel mb@
+return notemax
+
+
+*module	//## モジュール
+
+#global
+
+
+
+
+
+
+
+
+*syoki	//## 初期動作
+//--------------------------------------------------------------------
+// 初期動作
+//--------------------------------------------------------------------
+
+	//新規作成ウィンドウ
+	if dir_cmdline="/input"{
+			chdir dir_main
+			if folderchek("data")=0:mkdir "data"
+			exec "input.exe",16
+			chdir dir_main
+			end
+	}
+
+	#if startchek
+	startchek_start _tit	//２重起動のチェック
+	#endif
+
+
+
+
+	//iniファイルの読み込み
+	gosub *iniloads
+
+	chdir dir_cur
+	//フォルダが旧式だった場合
+	if folderchek("dat"):rename "dat","data":wait 0
+	
+
+	//ブラシ取得
+	GetStockObject WHITE_BRUSH
+	chnd=stat
+
+	//リスト読み込み
+	listload
+
+*scrset	//## スクリーン作成
+//--------------------------------------------------------------------
+// スクリーン作成
+//--------------------------------------------------------------------
+
+
+	buffer 4
+	picload "loupe.gif"
+	
+	//メイン
+	screen 0,winx,winy,6,winposx,winposy	//スクリーンウィンドウの初期化
+	hmain=hwnd
+	gosub *input_pos						//ウィンドウ位置の記憶
+	title _tit
+	objmode 1,0
+	objsize 60,21
+	color 235,235,235:boxf 0,0,ginfo(12),ginfo(13)		//ウィンドウの色を
+
+	objsize ginfo(12)-43,22,22
+	pos 42,1:listbox gets,170,mb //リストボックスの作成
+	listhnd=objinfo(0,2)
+	pos 1,ginfo(13)-20:input seames,ginfo(12)-70,19,127	//検索入力ボックス
+	input dammyinput,0,0								//ダミー
+	//ボタン設定
+	btn1=0,0,0
+	btn2=0,0,0
+	btn3=0,0,0
+	imgbtncolor btn1,btn2,btn3
+	imgbtnstyle 0,0
+	btnskinset btnskintype		//スキン設定
+
+
+
+
+		mbmes {"
+	　　
+	　---     ここに検索結果が表示されます     ---
+	＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+	　
+	　～ 使用方法 ～
+	　
+	　　　・下の検索ボックスに、キーワードを入力して検索ボタン
+	　　　　を押してください
+	　
+	　　　・検索するデータを登録するには、左の「登録」ボタンを
+	　　　　押して下さい
+	　
+	　　　・検索ボックスに「/help」と入力すると、コマンド一覧が表
+	　　　　示されます
+	　　　　　　　
+	"}
+	
+	gosub *btndraw		//ボタンの描画
+
+
+
+	screen 2,640,480,6,ginfo_dispx+10,ginfo_dispy+10
+
+	if backdraw=0{
+	syscolor 16
+	boxf
+
+	}else{
+	color 190,190,190		//ColorSet
+	boxf
+	}
+
+	btn1=0,0,0
+	btn2=0,0,0
+	btn3=0,0,0
+	imgbtncolor btn1,btn2,btn3
+	imgbtnstyle 0,0
+	gsel 2,-1
+	modaldlg_set 0,2
+	title ""
+	font "ＭＳ Ｐゴシック",12,0
+	objmode 2,0
+	pos _mesboxleft+_msl,21+_mesboxtop:mesbox viewmes,ginfo(12)-_mesboxleft+_mesboxright-_msr,ginfo(13)-46-_mesboxtop,2
+	hmb=objinfo(0,2)
+	SetWindowLongA objinfo(0,2),GWL_EXSTYLE,$0
+	SetWindowPos objinfo(0,2),0,0,0,0,0,$27
+	sendmsg objinfo(0,2),EM_SETMARGINS,3,hiword(5)|loword(5)
+
+
+	pos ginfo_winx-189,2:input insearchmes,105,18,255
+
+	objsize ginfo(12)-2,21
+	pos 1,ginfo_winy-22:button gosub "閉じる",*subwindowclose
+	objsize 120
+	color 10,112,237
+	objsel 0
+
+
+	
+	gosub *imgbtn_2
+	redraw 1
+	gsel 2,-1
+
+
+
+
+	//編集画面
+	screen 3,_editscreen_width,_editscreen_height,6,ginfo_dispx+10,ginfo_dispy+10
+	modaldlg_set 0,3
+	//title "Searder "+ver+" - 編集  [ "+ar+" ]"
+	title ""
+	objmode 2,0
+	sdim write,64
+
+	font "ＭＳ Ｐゴシック",12,0
+	pos 1,1:mesbox write,ginfo(12)-2,ginfo(13)-22,5,0
+	sendmsg objinfo(0,2),EM_SETMARGINS,3,hiword(5)|loword(5)
+
+	SetWindowPos objinfo(0,2),0,0,0,0,0,$27
+	objsize ginfo(12),21
+	objsize ginfo_winx/2,21
+	pos 0,ginfo(13)-21:button gosub "保存",*edit_save
+	pos ginfo_winx/2,ginfo(13)-21:button gosub "閉じる",*edit_close
+
+	syscolor 15
+	boxf
+	
+	gsel 3,-1
+
+
+*onmsg	//## オンメッセージ定義
+//--------------------------------------------------------------------
+// オンメッセージ定義
+//--------------------------------------------------------------------
+
+	
+	gsel 0	// メインウィンドウ
+	onexit gosub *owari
+	oncmd gosub *ON_WM_MOVE,WM_MOVE					//ウィンドウが移動
+	oncmd gosub *ON_WM_LBUTTONDOWN,WM_LBUTTONDOWN	//左クリックを押した
+	oncmd gosub *ON_WM_LBUTTONUP,WM_LBUTTONUP
+	oncmd gosub *ON_WM_MOUSEMOVE,WM_MOUSEMOVE
+	oncmd gosub *ON_WM_COMMAND,WM_COMMAND
+	onkey gosub *ON_onkey_0
+	oncmd gosub *ON_STARTCHEK,WM_USER+0x0200
+	oncmd gosub *ON_LISTLOAD,(WM_USER+0x0201)
+	oncmd gosub *inisaves,WM_USER+0x0202				//iniのセーブ
+	oncmd gosub *iniloads,WM_USER+0x0203				//iniのロード
+
+	gsel 2	//ビューウィンドウ
+	oncmd gosub *ON_WM_CTLCOLORSTATIC,WM_CTLCOLORSTATIC
+	oncmd gosub *ON_WM_LBUTTONDOWN,WM_LBUTTONDOWN	//左クリックを押した
+	oncmd gosub *ON_WM_LBUTTONUP,WM_LBUTTONUP
+	oncmd gosub *ON_WM_MOUSEMOVE,WM_MOUSEMOVE
+	//oncmd gosub *ON_WM_ACTIVE,WM_ACTIVE
+
+*main	//## メインスクリプト
+//--------------------------------------------------------------------
+// ＠メインスクリプト
+//--------------------------------------------------------------------
+	gsel 0
+	wait 0
+
+
+	objsel 1
+	imeset 1
+
+		
+	gsel 0,1			//初期画面表示
+	stop
+	
+*onmsgarea	//## オンメッセージ処理
+//--------------------------------------------------------------------
+// オンメッセージ処理
+//--------------------------------------------------------------------
+
+
+
+*ON_STARTCHEK	//二十起動された
+	lockgsel 0,0
+	actwin hwnd
+	objsel 1
+	lockgsel 1
+	return
+
+//リスト最適化
+*ON_LISTLOAD
+	listload
+	return
+
+*ON_WM_COMMAND
+
+	//ダブルクリック
+	if hiword(wparam)=2{
+
+
+		gosub *select_viewwindow
+
+	}
+	return
+*ON_WM_CTLCOLORSTATIC
+	getkey key,1
+	if key=1{
+		fofset=0
+	}
+
+	if backdraw=1{
+		SetClassLongA objinfo(0,2),GCL_HBRBACKGROUND,chnd
+		SetBkColor wparam,crgb(255,255,255)
+		return chnd
+	}
+
+	return
+*ON_onkey_0		//オンキー
+	mouse		//マウス表示
+
+
+	lockgsel 0,0
+	switch wparam
+
+		//カーソルキー
+		case 37
+			objsel 0
+			if searchedflag=1{
+				sendmsg listhnd,LB_GETCURSEL
+				if stat<START_SEA_SEL{
+					sendmsg listhnd,LB_SETCURSEL,8
+				}
+			}
+		swbreak
+
+		case 38
+			objsel 0
+			if searchedflag=1{
+				sendmsg listhnd,LB_GETCURSEL
+				if stat<START_SEA_SEL{
+					sendmsg listhnd,LB_SETCURSEL,8
+				}
+			}
+			
+		swbreak
+
+		case 39
+			objsel 0
+		swbreak
+
+		case 40
+			objsel 0
+			
+			if searchedflag=1{
+				sendmsg listhnd,LB_GETCURSEL
+				if stat=0{
+					sendmsg listhnd,LB_SETCURSEL,START_SEA_SEL
+				}
+
+			}
+
+
+		swbreak
+
+		//Enter
+		case 13
+
+			switch selectbox
+
+				//選択項目
+				case 1
+					selectbox=0
+					bts=0
+					clsseames
+					gosub *btndraw
+				swbreak
+
+				case 2
+					gosub *oe
+				swbreak
+
+				case 0
+					gosub *oe
+				swbreak
+
+			swend
+
+			
+		swbreak
+
+		//TAB
+		case 9
+			lockgsel 0,0
+			objsel -1
+			if stat=-1:bts=0:selectbox=0
+			if stat=1:bts=0:selectbox=0
+			bts+
+			if bts=1:selectbox=1:objsel 2	//C
+			if bts=2:selectbox=2:objsel 2	//検索
+			if bts>=3:bts=0:selectbox=0:objsel 1			//デフォルト
+			outinput seames,"	",""
+			objprm 1,seames
+			sendmsg objinfo(1,2),EM_SETSEL,strlen(seames),strlen(seames)	//カーソル位置を右側に
+			gosub *btndraw
+		swbreak
+
+		//ESC
+		case 27
+			gosub *owari
+		swbreak
+
+		default
+				objsel 1
+		swbreak
+
+
+
+	swend
+	lockgsel 1
+
+	
+return
+
+
+*oe	//検索結果条件分岐
+					objsel -1
+					switch stat
+
+						//検索ボックスか否か
+						case 2
+							bts=0
+							selectbox=0
+							gosub *btndraw
+							gosub *Search_on	//検索実行
+						swbreak
+
+						case 1	//input
+							gosub *Search_on	//検索実行
+						swbreak
+
+						case 0	//mb
+							if searchedflag{
+								sendmsg listhnd,LB_GETCURSEL
+								if stat<START_SEA_SEL{
+									sendmsg listhnd,LB_SETCURSEL,START_SEA_SEL
+								}
+							}
+							
+							gosub *select_viewwindow
+						swbreak
+
+					swend
+
+
+
+return
+
+
+*ON_WM_LBUTTONUP
+	ReleaseCapture
+	if ginfo_intid=0{
+		lockgsel 0,0
+
+		gosub *btndraw	//ボタンスキン
+		
+		lockgsel 1
+	}
+
+
+	if ginfo_intid=2{
+		lockgsel 0,2
+		gosub *imgbtn_2
+		lockgsel 1
+	}
+	return
+
+	
+
+*ON_WM_MOUSEMOVE
+	if ginfo_intid=0{
+		lockgsel 0,0
+
+		gosub *btndraw	//ボタンスキン
+
+		lockgsel 1
+	}
+
+
+	if ginfo_intid=2{
+		lockgsel 0,2
+		gosub *imgbtn_2
+		lockgsel 1
+	}
+	
+	return
+
+	
+*ON_WM_LBUTTONDOWN	//左クリックを押した
+	SetCapture hwnd
+	//id 0
+	if ginfo_intid=0{
+		lockgsel 0,0
+
+		gosub *btndraw	//ボタンスキン
+		if hspstat=1{
+			//title "MOUSE("+mousex+","+mousey+")   _WINX-MOUSE("+(_winx-mousex)+","+(_winy-mousey)+")"
+		}
+		
+		lockgsel 1
+	}
+
+
+	if ginfo_intid=2{
+		lockgsel 0,2
+		if hspstat=1{
+			title "MOUSE("+mousex+","+mousey+")   _WINX-MOUSE("+(_winx-mousex)+","+(_winy-mousey)+")"
+		}
+		gosub *imgbtn_2
+		lockgsel 1
+	}
+	
+	return
+	
+*ON_WM_MOVE	//ウィンドウが移動
+
+	//id 0
+	if ginfo_intid=0{
+		lockgsel 0,0
+		
+		if (LOWORD(lparam)<(ginfo(12)+ginfo(21)))&(HIWORD(lparam)<(ginfo(13)+ginfo(21))){
+			if (LOWORD(lparam)>-ginfo(12))&(HIWORD(lparam)>-ginfo(13)){
+				gosub *input_pos	//ウィンドウ位置の記憶
+			}
+		}
+		
+		lockgsel 1
+	}
+	
+	return
+
+*ON_WM_ACTIVE	//ウィンドウがアクティブ
+
+	if ginfo_intid=2{
+		lockgsel 0,2
+			title "a"
+		
+		lockgsel 1
+	}
+
+	return
+
+
+	
+*subroot	//## サブルーチン
+//--------------------------------------------------------------------
+// サブルーチン
+//--------------------------------------------------------------------
+
+
+*inisaves	//iniのセーブ
+
+		//現在の設定を保存
+		s1=dir_cur
+		chdir dir_main
+		inisave _ininame,data
+		chdir s1
+	
+	return
+	
+*iniloads	//iniの読み込み
+	chdir dir_main
+	iniload _ininame,data
+	
+	statflag=stat
+
+	//旧Searderを使用している場合dataを初期化する
+	if ""=inigetstr("System","Ver",data){
+	data=""
+	statflag=-1
+	}
+
+	//iniファイルが存在したかどうか
+	if statflag!-1{
+
+		winposx=inigetint ("Window","x",data)
+		winposy=inigetint ("Window","y",data)
+		btnskintype=inigetint("System","Btnskin",data)
+		mark=inigetstr("System","Mark",data)
+		if mark="":mark="○"
+		backdraw=inigetint("System","BackDraw",data)
+		inisetint "System","BackDraw",backdraw,data
+		
+
+	}else{
+
+		btnskintype=0
+		mark="○"
+		inisetstr "System","Mark",mark,data
+		backdraw=0
+		inisetint "System","BackDraw",backdraw,data
+		inisetstr "System","Ver",_ver,data
+
+	}
+
+	
+	return
+
+
+*view_onkey	//ビューワオンキー
+
+	mouse
+
+	//全て選択
+	getkey key(0),17
+	getkey key(1),65
+	if (key(0)=1)&(key(1)=1){
+		lockgsel 0,2
+
+		objsel -1
+		if stat=-1 : objsel 0
+		fofset=0
+		sendmsg hmb,EM_SETSEL,0,-1
+		lockgsel 1
+	}
+	
+
+
+
+	lockgsel 0,2
+	switch wparam
+		//内部検索
+		case 9
+			objsel -1
+			if stat=-1:objsel 0:return
+			if stat=0:objsel 1:return
+			if stat=1:objsel 0:return
+		swbreak
+
+		//エンター
+		case 13
+			//内蔵検索に文字がある場合実行
+			if insearchmes!""{
+				gosub *search_in
+			}
+		swbreak
+
+		//ESC
+		case 27
+			objsel -1
+			if stat=0{
+				gosub *subwindowclose
+			}else{
+	
+			}
+		swbreak
+
+
+			
+
+	swend
+	lockgsel 1
+	
+	return
+
+
+
+*search_in	//内部検索
+	lockgsel 0,2
+
+	findselect 0,viewmes,insearchmes
+
+	lockgsel 1
+	return
+
+
+/*
+
+
+			objsel 0
+			s4=varptr(viewmes)
+			StrStrIA s4,varptr(insearchmes)
+			s1=stat
+
+			s3=stat-s4
+			title ""+s3
+			
+			sendmsg hmb,EM_SETSEL,s3,s3+typelen(insearchmes)
+			
+
+
+
+
+
+
+			lockgsel 0,2
+
+			dim s1,2
+			sendmsg hmb,EM_GETSEL ,0,varptr(s1)
+
+			
+			
+			hitpos=instr(viewmes,s1(1),insearchmes)
+			objsel 0
+			hitpos+=s1(1)
+			hitpos-nottypelen(viewmes)
+			title ""+hitpos
+			
+			sendmsg hmb,EM_SETSEL,hitpos,hitpos+typelen(insearchmes)
+			
+
+			lockgsel 1
+*/
+
+
+
+
+*edit_save	//編集＞セーブ
+	listeditsave
+
+	return
+*edit_close	//編集＞閉じる
+	onkey 1
+	modaldlg_close parent,3
+	if parent=0{
+		actsel 0
+	}
+	parent=0
+	sdim write,64
+	imedel
+	return
+	
+*imgbtn_2	//サブ画面用のスキンボタン
+	redraw 0
+	img1=5,0,0
+	img2=5,0,0
+	img3=5,0,19
+
+	pos ginfo_winx-80,1:imgbtn eea,"編集",img1,img2,img3,38,19
+	if eea=1{
+	editviewopen openfilename@mod,2
+	parent=2
+	
+
+	}
+	pos ginfo_winx-40,1:imgbtn eea,"削除",img1,img2,img3,38,19
+	if eea=1{
+				chdir dir_main
+				if folderchek("data")=0:errs "ファイルが見つかりません":return
+				chdir "data"
+				exist openfilename@mod:if strsize=-1:errs "このファイルは存在しません":return
+			dialog "このファイルを削除しますか？\n["+openfilename@mod+"]",2,"確認"
+			if stat=6{
+				delete openfilename@mod
+				listload		//データリストの再読み込み
+				dialog "削除が完了しました",,_tit
+				chdir dir_main
+			}
+
+	}
+	redraw 1
+	return
+*Search_on
+	selectbox=0 : gosub *btndraw
+	//seames に検索文字が表示されます。
+	seamesd=seames
+	outinput seamesd," ",""
+	outinput seamesd,"　",""
+	if seamesd="":return
+
+	if strmid(seames,0,1)="/"{
+	//コマンドモード
+	getstr cmd,seames,1,' '		//コマンド名を代入
+	getstr prm,seames,strsize	//パラメータを代入
+	listflag=0
+	switch cmd
+		
+		case "dialog"
+			dialog prm,,"dialog"
+		swbreak
+
+
+		case "help"
+			mbmes {"
+	　
+				　コマンド一覧
+				＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+				　
+				　/help　　コマンド一覧を表示します
+				　/input 　新規データを登録する画面を立ち上げます
+				　/data　 登録されているデータの保存先フォルダを表示
+				　/ver 　　このファイルのバージョンと作者名を表示します
+				　/all 　　 データ一覧を表示します
+				　/btnskin [0~*]　ボタンのスキンを変更します
+				"}
+		swbreak
+
+		case "kuji"
+			randomize
+			dm=rnd(100)
+			
+			
+			if dm=0:dmstr="超大吉"	//1%
+			if (dm>=4)&(dm<=13):dmstr="大吉"	//4%
+			if (dm>=14)&(dm<=33):dmstr="中吉"	//10%
+			if (dm>=34)&(dm<=63):dmstr="小吉"	//20%
+			if (dm>=64)&(dm<=83):dmstr="吉"		//30%
+			if (dm>=84)&(dm<=93):dmstr="末吉"	//20%
+			if (dm>=94)&(dm<=97):dmstr="区"		//10%
+			if (dm>=98)&(dm<=98):dmstr="大凶"	//4%
+			if dm=99:dmstr="超大凶"	//1%
+			
+			mbmes {"
+			　
+			　おみくじ
+			＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+			
+			　
+			　今日のあなたの運勢は…
+			　
+			　　　　　　　　『 "}+dmstr+{" 』 です。
+			"}
+
+		swbreak
+		
+		case "ver"
+		
+				mbmes {"
+			　
+			　バージョン情報
+			＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+			　
+			　ソフト名　  Searder（サーダー）
+			　ﾊﾞｰｼﾞｮﾝ　  "}+_ver+{"
+			　
+			　作者        Akicansoft
+			　URL　　  　 http://hp.vector.co.jp/authors/VA034028/
+			"}
+			
+			
+		swbreak
+
+
+		case "data"
+			chdir dir_main
+			if folderchek("data")=0:mkdir "data"
+			exec "data",16
+			chdir dir_main
+
+		swbreak
+
+
+		case "info"
+			mbmes {"
+			　
+			　情報
+			＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+			　
+			　現在登録されているデータの数： "}+listmaxs()+{" 個
+			
+			"}
+		swbreak
+
+		case "btnskin"
+			btnskinset int(prm)
+		swbreak
+
+
+		case "edit"
+			listsearch hitdat,"",tab
+			
+			notesel hitdat
+		
+			
+			hitdatmax=notemax
+			
+		
+			listflag=1
+			mbmes{"
+			　
+			　--- 編集 ---
+			　
+			　　　※ダブルクリックで編集するファイルを選択してください
+			＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+			　
+			　
+			"}+hitdat+"\n\n"
+			
+		swbreak
+
+
+
+		case "delete"
+			listsearch hitdat,"",tab
+			
+			notesel hitdat
+		
+			
+			hitdatmax=notemax
+			
+		
+			listflag=1
+			mbmes{"
+			　
+			　--- 削除 ---
+			　
+			　　　※ダブルクリックで削除するファイルを選択してください
+			＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+			　
+			　
+			"}+hitdat+"\n\n"
+			
+		swbreak
+
+
+		case "input"
+			chdir dir_main
+			exist "input.exe":if strsize=-1:errs "input.exeが見つかりません":return
+			exec "input.exe"
+			
+		swbreak
+
+
+
+
+		case "all"
+			listsearch hitdat,"",tab
+			mbmes{"
+			　
+			　--- データ一覧 ---
+			　
+			　　　※ダブルクリックで詳細を開くことができます
+			＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+			　
+			"}+hitdat+"\n\n"
+			listflag=1
+		swbreak
+
+		
+	swend
+
+*cmdm	//コマンドモード
+
+	
+	
+	clsseames listflag					//検索結果のクリア
+	return
+	}else{
+	//通常検索
+*NomSearch	//通常検索
+	searchedflag=0
+	//検索実行
+	listsearch hitdat,seames,tab
+	
+	notesel hitdat
+
+	
+	hitdatmax=notemax
+	
+	if hitdatmax=0{
+		mbmes {"
+		　　
+		　---     一件も見つかりませんでした     ---
+		　
+		　　　・検索キーワードを複数にする
+		　　　・検索キーワードを減らしてみる
+		　　　・検索キーワードを具体的にする
+		　
+		　　　　　　　　　　　　　　　　などしてみてください
+		　
+		＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+		　
+		　～ 『"}+seames+{"』 の検索結果 ～
+		"}
+		objsel 1
+		return
+
+	}else{
+		searchedflag=1
+		mbmes{"
+		　
+		　--- 検索結果 "}+hitdatmax+{" 件見つかりました ---
+		　
+		　　　※ダブルクリックで詳細を開くことができます
+		＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+		　
+		　～ 『"}+seames+{"』 の検索結果 ～\n
+		"}+hitdat
+	
+		
+	
+		objsel 0
+		return
+		}
+	}
+	
+
+	return
+
+
+
+
+*subwindowclose	//ビュー＞閉じる
+	onkey gosub *ON_onkey_0
+	onkey 1
+	modaldlg_close 0,2
+	sdim viewmes,64
+	gsel 0
+	objsel 0
+	return
+
+
+
+*btndraw	//gsel0 ボタンの描画
+	lockgsel 0,0
+
+	redraw 0
+
+	img1=9,0,0
+	img2=9,0,0
+	img3=9,0,21
+	gh=0
+	eea=0
+	pos 1,1+gh:imgbtn eea,"登録",img1,img2,img3,40,21:gh+22
+	if eea=1{
+		imedel
+		seamesset "/input"
+	}
+		pos 1,1+gh:imgbtn eea,"編集",img1,img2,img3,40,21:gh+22
+	if eea=1{
+		imedel
+		
+		seamesset "/edit":objsel 0}
+		pos 1,1+gh:imgbtn eea,"削除",img1,img2,img3,40,21:gh+22
+	if eea=1{
+		imedel
+		seamesset "/delete":objsel 0}
+	gh+9
+		pos 1,1+gh:imgbtn eea,"ﾌｫﾙﾀﾞ",img1,img2,img3,40,21:gh+22
+	if eea=1:wait 0:seamesset "/data"
+	
+		pos 1,1+gh:imgbtn eea,"Help",img1,img2,img3,40,21:gh+22
+	if eea=1:seamesset "/help"
+		pos 1,1+gh:imgbtn eea,"ﾗﾝﾀﾞﾑ",img1,img2,img3,40,21:gh+22
+			if eea=1{
+				imedel
+				chdir dir_main
+				if folderchek("data")=1{
+					
+					randomize
+					
+					viewopen listgetsel(rnd(listmaxs()))
+
+				}
+				
+			}
+	img1=9,0,0
+	img2=9,0,0
+	img3=9,0,21
+	pos 1,1+gh:imgbtn eea,"情報",img1,img2,img3,40,21:gh+22
+	if eea=1:seamesset "/info"
+	
+	pos 1,1+gh:imgbtn eea,"Ver.",img1,img2,img3,40,21:gh+22
+	if eea=1:seamesset "/ver"
+
+	search1=5,0,0
+	search2=5,0,0
+	search3=5,0,19
+	pos ginfo(12)-39,ginfo(13)-20:imgbtn eea,"検索",search1,search2,search3,_searwidth,19
+	if eea=1{
+		gosub *Search_on
+	}
+
+	ccc1=6,0,0
+	ccc2=6,0,0
+	ccc3=6,0,19
+	pos ginfo(12)-68,ginfo(13)-20:imgbtn eea,"C",ccc1,ccc2,ccc3,_cwidth,19
+	if eea=1:clsseames
+
+
+	color 255,255,255
+	boxf 1,ginfo_winy-21,100,ginfo_winy
+	
+	switch selectbox
+	case 1
+	select_rect 295,189,21,12
+	swbreak
+
+	case 2
+	select_rect 324,189,31,12
+	swbreak
+
+
+	swend
+	
+	redraw 1
+	lockgsel 1
+	return
+
+
+*select_viewwindow	//ビューワウィンドウの選択
+
+		sdim s1
+		sdim s2,128
+		sendmsg listhnd,LB_GETCURSEL
+		sendmsg listhnd,LB_GETTEXT,stat,varptr(s1)
+		s3=strmid(s1,strlen(tab),strlen(s1))
+		sendmsg listhnd,LB_GETTEXT,1,varptr(s2)
+
+
+	
+		if strmid(s1,0,strlen(tab))=tab{
+
+			if instr(s2,0,"編集")!-1{
+			
+				editviewopen s3
+				
+				return
+			}
+
+
+			if instr(s2,0,"削除")!-1{
+				dialog "このファイルを削除しますか？\n["+s3+"]",2,"確認"
+				if stat=6{
+					chdir dir_main
+					if folderchek("data")=0:errs "ファイルが見つかりません":return
+					chdir "data"
+					exist s3:if strsize=-1:errs "ファイルが見つかりません":return
+					delete s3
+
+
+					sendmsg listhnd,LB_GETCURSEL
+					oldsel=stat
+					s5=stat
+					if stat>=listmaxs():oldsel=s5-1
+
+
+					listload
+					listsearch hitdat,"",tab
+				mbmes{"
+				　
+				　--- 削除 ---
+				　
+				　　　※ダブルクリックで削除するファイルを選択してください
+				＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿＿
+				　
+				　
+				"}+hitdat+"\n\n"
+					dialog "正常に削除が完了しました",,"Searder"
+					
+				sendmsg listhnd,LB_SETCURSEL,oldsel
+				}
+
+
+				
+				actsel 0
+				wait 0
+				return
+			}
+
+			if instr(s2,0,"検索")!-1{
+				viewopen s3
+				return
+			}
+
+			if instr(s2,0,"データ一覧")!-1{
+				viewopen s3
+				return
+			}
+
+		}
+	return
+
+*input_pos	//ウィンドウ位置の記憶
+	lockgsel 0,0
+	inisetint "Window","x",ginfo(4),data
+	inisetint "Window","y",ginfo(5),data
+	lockgsel 1
+	return
+	
+*owari	//ソフト終了
+
+	//編集画面
+	if wparam=3{
+		onkey 1
+		sdim write,64
+		modaldlg_close parent,3
+		parent=0
+		return
+
+	}
+
+	//ビュー画面
+	if wparam=2{
+		onkey 1
+		sdim s1,64
+		modaldlg_close 0,2
+		return
+	}
+
+	if wparam=0{
+		//iniのセーブ
+		gosub *inisaves
+	}
+	end
+
